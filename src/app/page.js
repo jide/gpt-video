@@ -56,7 +56,7 @@ function base64ToBlob(base64, mimeType) {
   return new Blob([byteArray], { type: mimeType });
 }
 
-export async function uploadImageToFreeImageHost(base64Image) {
+async function uploadImageToFreeImageHost(base64Image) {
   const blob = base64ToBlob(base64Image, "image/jpeg");
   const formData = new FormData();
   formData.append("file", blob, "image.jpg");
