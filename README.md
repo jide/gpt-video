@@ -15,6 +15,8 @@ This project is a fun experiment to explore the feasibility of real-time AI inte
 
 ## 🚀 Getting Started
 
+You can provide the OPENAI_API_KEY environment variable or let the user provide its own API key in the UI.
+
 First, run the development server:
 
 ```bash

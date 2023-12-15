@@ -147,12 +147,7 @@ export default function Page({ interval = INTERVAL }) {
   }
 
   function stopRecording() {
-    audio.stopRecording();
-    video.stopRecording();
-    isBusy.current = false;
-
-    setIsStarted(false);
-    setPhase("not inited");
+    document.location.reload();
   }
 
   async function onSpeech(data) {
@@ -175,7 +170,11 @@ export default function Page({ interval = INTERVAL }) {
       body: speechtotextFormData,
     });
 
-    const { text } = await speechtotextResponse.json();
+    const { text, error } = await speechtotextResponse.json();
+
+    if (error) {
+      alert(error);
+    }
 
     setTranscription(text);
 
@@ -214,7 +213,6 @@ export default function Page({ interval = INTERVAL }) {
     id,
     body: {
       id,
-      token,
     },
     async onFinish(message) {
       setPhase("assistant: processing text to speech");
@@ -358,7 +356,6 @@ export default function Page({ interval = INTERVAL }) {
         <div className="flex flex-wrap justify-center p-4 opacity-50 gap-2">
           {isStarted ? (
             <button
-              disabled={!token}
               className="px-4 py-2 bg-gray-700 rounded-md disabled:opacity-50"
               onClick={stopRecording}
             >
@@ -366,7 +363,6 @@ export default function Page({ interval = INTERVAL }) {
             </button>
           ) : (
             <button
-              disabled={!token}
               className="px-4 py-2 bg-gray-700 rounded-md disabled:opacity-50"
               onClick={startRecording}
             >
@@ -374,14 +370,12 @@ export default function Page({ interval = INTERVAL }) {
             </button>
           )}
           <button
-            disabled={!token}
             className="px-4 py-2 bg-gray-700 rounded-md disabled:opacity-50"
             onClick={() => reload()}
           >
             Regenerate
           </button>
           <button
-            disabled={!token}
             className="px-4 py-2 bg-gray-700 rounded-md disabled:opacity-50"
             onClick={() => setDisplayDebug((p) => !p)}
           >

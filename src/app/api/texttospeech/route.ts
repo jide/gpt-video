@@ -7,6 +7,12 @@ export async function POST(req: Request) {
   const input = formData.get("input") as string;
   const token = formData.get("token") as string;
 
+  if (!token && !process.env.OPENAI_API_KEY) {
+    return Response.json({
+      error: "No API key provided.",
+    });
+  }
+
   const openai = new OpenAI({
     apiKey: token || process.env.OPENAI_API_KEY,
   });

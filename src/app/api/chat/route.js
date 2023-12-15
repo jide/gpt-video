@@ -21,6 +21,12 @@ export async function POST(req) {
   const json = await req.json();
   const { messages, token } = json;
 
+  if (!token && !process.env.OPENAI_API_KEY) {
+    return Response.json({
+      error: "No API key provided.",
+    });
+  }
+
   const openai = new OpenAI({
     apiKey: token || process.env.OPENAI_API_KEY,
   });
