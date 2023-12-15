@@ -118,6 +118,7 @@ export default function Page({ interval = INTERVAL }) {
   const [currentVolume, setCurrentVolume] = useState(-50);
   const [volumePercentage, setVolumePercentage] = useState(0);
   const [token, setToken] = useLocalStorage("ai-token", "");
+  const [lang, setLang] = useLocalStorage("lang", "");
   const isBusy = useRef(false);
   const screenshotsRef = useRef([]);
   const videoRef = useRef();
@@ -163,6 +164,7 @@ export default function Page({ interval = INTERVAL }) {
     const speechtotextFormData = new FormData();
     speechtotextFormData.append("file", data, "audio.webm");
     speechtotextFormData.append("token", token);
+    speechtotextFormData.append("lang", lang);
 
     const speechtotextResponse = await fetch("/api/speechtotext", {
       method: "POST",
@@ -212,6 +214,8 @@ export default function Page({ interval = INTERVAL }) {
     id,
     body: {
       id,
+      token,
+      lang,
     },
     async onFinish(message) {
       setPhase("assistant: processing text to speech");
@@ -386,6 +390,12 @@ export default function Page({ interval = INTERVAL }) {
             value={token}
             placeholder="OpenAI API key"
             onChange={(e) => setToken(e.target.value)}
+          />
+          <input
+            className="px-4 py-2 bg-gray-700 rounded-md"
+            value={lang}
+            placeholder="Optional language code"
+            onChange={(e) => setLang(e.target.value)}
           />
         </div>
       </div>

@@ -6,6 +6,7 @@ export async function POST(req: Request) {
   const formData = await req.formData();
   const file = formData.get("file") as File;
   const token = formData.get("token") as string;
+  const lang = formData.get("lang") as string;
 
   if (!token && !process.env.OPENAI_API_KEY) {
     return Response.json({
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
   const transcription = await openai.audio.transcriptions.create({
     file,
     model: "whisper-1",
-    language: "en",
+    language: lang || undefined,
   });
 
   return Response.json(transcription);
