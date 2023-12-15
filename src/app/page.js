@@ -27,7 +27,7 @@ function playAudio(url) {
   });
 }
 
-export async function getImageDimensions(src) {
+async function getImageDimensions(src) {
   return new Promise((resolve, reject) => {
     const img = new globalThis.Image();
 
