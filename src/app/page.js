@@ -15,7 +15,7 @@ const MAX_SCREENSHOTS = 60;
 const SILENCE_DURATION = 2500;
 const SILENT_THRESHOLD = -30;
 
-export const transparentPixel =
+const transparentPixel =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wcAAwAB/2lXzAAAACV0RVh0ZGF0ZTpjcmVhdGU9MjAyMy0xMC0xOFQxNTo0MDozMCswMDowMEfahTAAAAAldEVYdGRhdGU6bW9kaWZ5PTIwMjMtMTAtMThUMTU6NDA6MzArMDA6MDBa8cKfAAAAAElFTkSuQmCC";
 
 // A function that plays an audio from a url and reutnrs a promise that resolves when the audio ends
