@@ -1,113 +1,431 @@
-import Image from 'next/image'
+"use client";
 
-export default function Home() {
+import { useId, useEffect, useRef, useState } from "react";
+import { useChat } from "ai/react";
+import useSilenceAwareRecorder from "silence-aware-recorder/react";
+import useMediaRecorder from "@wmik/use-media-recorder";
+import mergeImages from "merge-images";
+import { useLocalStorage } from "../lib/use-local-storage";
+
+const INTERVAL = 250;
+const IMAGE_WIDTH = 512;
+const IMAGE_QUALITY = 0.6;
+const COLUMNS = 4;
+const MAX_SCREENSHOTS = 60;
+const SILENCE_DURATION = 2500;
+const SILENT_THRESHOLD = -20;
+
+export const transparentPixel =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wcAAwAB/2lXzAAAACV0RVh0ZGF0ZTpjcmVhdGU9MjAyMy0xMC0xOFQxNTo0MDozMCswMDowMEfahTAAAAAldEVYdGRhdGU6bW9kaWZ5PTIwMjMtMTAtMThUMTU6NDA6MzArMDA6MDBa8cKfAAAAAElFTkSuQmCC";
+
+// A function that plays an audio from a url and reutnrs a promise that resolves when the audio ends
+function playAudio(url) {
+  return new Promise((resolve) => {
+    const audio = new Audio(url);
+    audio.onended = resolve;
+    audio.play();
+  });
+}
+
+export async function getImageDimensions(src) {
+  return new Promise((resolve, reject) => {
+    const img = new globalThis.Image();
+
+    img.onload = function () {
+      resolve({
+        width: this.width,
+        height: this.height,
+      });
+    };
+
+    img.onerror = function () {
+      reject(new Error("Failed to load image."));
+    };
+
+    img.src = src;
+  });
+}
+
+function base64ToBlob(base64, mimeType) {
+  const byteCharacters = atob(base64.split(",")[1]);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type: mimeType });
+}
+
+export async function uploadImageToFreeImageHost(base64Image) {
+  const blob = base64ToBlob(base64Image, "image/jpeg");
+  const formData = new FormData();
+  formData.append("file", blob, "image.jpg");
+
+  const response = await fetch("https://tmpfiles.org/api/v1/upload", {
+    method: "POST",
+    body: formData,
+  });
+
+  const { data } = await response.json();
+
+  return data.url.replace("https://tmpfiles.org/", "https://tmpfiles.org/dl/");
+}
+
+async function imagesGrid({
+  base64Images,
+  columns = COLUMNS,
+  gridImageWidth = IMAGE_WIDTH,
+  quality = IMAGE_QUALITY,
+}) {
+  if (!base64Images.length) {
+    return transparentPixel;
+  }
+
+  const dimensions = await getImageDimensions(base64Images[0]);
+
+  // Calculate the aspect ratio of the first image
+  const aspectRatio = dimensions.width / dimensions.height;
+
+  const gridImageHeight = gridImageWidth / aspectRatio;
+
+  const rows = Math.ceil(base64Images.length / columns); // Number of rows
+
+  // Prepare the images for merging
+  const imagesWithCoordinates = base64Images.map((src, index) => ({
+    src,
+    x: (index % columns) * gridImageWidth,
+    y: Math.floor(index / columns) * gridImageHeight,
+  }));
+
+  // Merge images into a single base64 string
+  return await mergeImages(imagesWithCoordinates, {
+    format: "image/jpeg",
+    quality,
+    width: columns * gridImageWidth,
+    height: rows * gridImageHeight,
+  });
+}
+
+export default function Page({ interval = INTERVAL }) {
+  const id = useId();
+  const maxVolumeRef = useRef(0);
+  const minVolumeRef = useRef(-100);
+  const [displayDebug, setDisplayDebug] = useState(false);
+  const [isStarted, setIsStarted] = useState(false);
+  const [phase, setPhase] = useState("not inited");
+  const [transcription, setTranscription] = useState("");
+  const [imagesGridUrl, setImagesGridUrl] = useState(null);
+  const [currentVolume, setCurrentVolume] = useState(-50);
+  const [volumePercentage, setVolumePercentage] = useState(0);
+  const [token, setToken] = useLocalStorage("ai-token", "");
+  const isBusy = useRef(false);
+  const screenshotsRef = useRef([]);
+  const videoRef = useRef();
+  const canvasRef = useRef();
+
+  const audio = useSilenceAwareRecorder({
+    onDataAvailable: onSpeech,
+    onVolumeChange: setCurrentVolume,
+    silenceDuration: SILENCE_DURATION,
+    silentThreshold: SILENT_THRESHOLD,
+    minDecibels: -100,
+  });
+
+  let { liveStream, ...video } = useMediaRecorder({
+    recordScreen: false,
+    blobOptions: { type: "video/webm" },
+    mediaStreamConstraints: { audio: false, video: true },
+    onDataAvailable: console.log,
+  });
+
+  function startRecording() {
+    audio.startRecording();
+    video.startRecording();
+
+    setIsStarted(true);
+    setPhase("user: waiting for speech");
+  }
+
+  function stopRecording() {
+    audio.stopRecording();
+    video.stopRecording();
+    isBusy.current = false;
+
+    setIsStarted(false);
+    setPhase("not inited");
+  }
+
+  async function onSpeech(data) {
+    if (isBusy.current) return;
+
+    // current state is not available here, so we get token from localstorage
+    const token = JSON.parse(localStorage.getItem("ai-token"));
+
+    isBusy.current = true;
+    audio.stopRecording();
+
+    setPhase("user: processing speech to text");
+
+    const speechtotextFormData = new FormData();
+    speechtotextFormData.append("file", data, "audio.webm");
+    speechtotextFormData.append("token", token);
+
+    const speechtotextResponse = await fetch("/api/speechtotext", {
+      method: "POST",
+      body: speechtotextFormData,
+    });
+
+    const { text } = await speechtotextResponse.json();
+
+    setTranscription(text);
+
+    setPhase("user: uploading video captures");
+
+    // Keep only the last XXX screenshots
+    screenshotsRef.current = screenshotsRef.current.slice(-MAX_SCREENSHOTS);
+
+    const imageUrl = await imagesGrid({
+      base64Images: screenshotsRef.current,
+    });
+
+    screenshotsRef.current = [];
+
+    const uploadUrl = await uploadImageToFreeImageHost(imageUrl);
+
+    setImagesGridUrl(imageUrl);
+
+    setPhase("user: processing completion");
+
+    await append({
+      content: [
+        text,
+        {
+          type: "image_url",
+          image_url: {
+            url: uploadUrl,
+          },
+        },
+      ],
+      role: "user",
+    });
+  }
+
+  const { messages, append, reload, isLoading } = useChat({
+    id,
+    body: {
+      id,
+      token,
+    },
+    async onFinish(message) {
+      setPhase("assistant: processing text to speech");
+
+      // same here
+      const token = JSON.parse(localStorage.getItem("ai-token"));
+
+      const texttospeechFormData = new FormData();
+      texttospeechFormData.append("input", message.content);
+      texttospeechFormData.append("token", token);
+
+      const response = await fetch("/api/texttospeech", {
+        method: "POST",
+        body: texttospeechFormData,
+      });
+
+      setPhase("assistant: playing audio");
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      await playAudio(url);
+
+      audio.startRecording();
+      isBusy.current = false;
+
+      setPhase("user: waiting for speech");
+    },
+  });
+
+  useEffect(() => {
+    if (videoRef.current && liveStream && !videoRef.current.srcObject) {
+      videoRef.current.srcObject = liveStream;
+    }
+  }, [liveStream]);
+
+  useEffect(() => {
+    const captureFrame = () => {
+      if (video.status === "recording" && audio.isRecording) {
+        const targetWidth = IMAGE_WIDTH;
+
+        const videoNode = videoRef.current;
+        const canvasNode = canvasRef.current;
+
+        if (videoNode && canvasNode) {
+          const context = canvasNode.getContext("2d");
+          const originalWidth = videoNode.videoWidth;
+          const originalHeight = videoNode.videoHeight;
+          const aspectRatio = originalHeight / originalWidth;
+
+          // Set new width while maintaining aspect ratio
+          canvasNode.width = targetWidth;
+          canvasNode.height = targetWidth * aspectRatio;
+
+          context.drawImage(
+            videoNode,
+            0,
+            0,
+            canvasNode.width,
+            canvasNode.height
+          );
+          // Compress and convert image to JPEG format
+          const quality = 1; // Adjust the quality as needed, between 0 and 1
+          const base64Image = canvasNode.toDataURL("image/jpeg", quality);
+
+          if (base64Image !== "data:,") {
+            screenshotsRef.current.push(base64Image);
+          }
+        }
+      }
+    };
+
+    const intervalId = setInterval(captureFrame, interval);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [interval, video.status, audio.isRecording]);
+
+  useEffect(() => {
+    if (!audio.isRecording) {
+      setVolumePercentage(0);
+      return;
+    }
+
+    if (typeof currentVolume === "number" && isFinite(currentVolume)) {
+      if (currentVolume > maxVolumeRef.current)
+        maxVolumeRef.current = currentVolume;
+      if (currentVolume < minVolumeRef.current)
+        minVolumeRef.current = currentVolume;
+
+      if (maxVolumeRef.current !== minVolumeRef.current) {
+        setVolumePercentage(
+          (currentVolume - minVolumeRef.current) /
+            (maxVolumeRef.current - minVolumeRef.current)
+        );
+      }
+    }
+  }, [currentVolume, audio.isRecording]);
+
+  const lastAssistantMessage = messages
+    .filter((it) => it.role === "assistant")
+    .pop();
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.js</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{' '}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
+    <>
+      <canvas ref={canvasRef} style={{ display: "none" }} />
+      <div className="antialiased w-screen h-screen p-4 flex flex-col justify-center items-center bg-black">
+        <div className="w-full h-full sm:container sm:h-auto grid grid-rows-[auto_1fr] grid-cols-[1fr] sm:grid-cols-[2fr_1fr] sm:grid-rows-[1fr] justify-content-center bg-black">
+          <div className="relative">
+            <video
+              ref={videoRef}
+              className="h-auto w-full aspect-[4/3] object-cover rounded-[1rem] bg-gray-900"
+              autoPlay
             />
-          </a>
+            {audio.isRecording ? (
+              <div className="w-16 h-16 absolute bottom-4 left-4 flex justify-center items-center">
+                <div
+                  className="w-16 h-16 bg-red-500 opacity-50 rounded-full"
+                  style={{
+                    transform: `scale(${Math.pow(volumePercentage, 4).toFixed(
+                      4
+                    )})`,
+                  }}
+                ></div>
+              </div>
+            ) : (
+              <div className="w-16 h-16 absolute bottom-4 left-4 flex justify-center items-center cursor-pointer">
+                <div className="text-5xl text-red-500 opacity-50">⏸</div>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center justify-center p-12 text-md leading-relaxed relative">
+            {lastAssistantMessage?.content}
+            {isLoading && (
+              <div className="absolute left-50 top-50 w-8 h-8 ">
+                <div className="w-6 h-6 -mr-3 -mt-3 rounded-full bg-cyan-500 animate-ping" />
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-wrap justify-center p-4 opacity-50 gap-2">
+          {isStarted ? (
+            <button
+              disabled={!token}
+              className="px-4 py-2 bg-gray-700 rounded-md disabled:opacity-50"
+              onClick={stopRecording}
+            >
+              Stop session
+            </button>
+          ) : (
+            <button
+              disabled={!token}
+              className="px-4 py-2 bg-gray-700 rounded-md disabled:opacity-50"
+              onClick={startRecording}
+            >
+              Start session
+            </button>
+          )}
+          <button
+            disabled={!token}
+            className="px-4 py-2 bg-gray-700 rounded-md disabled:opacity-50"
+            onClick={() => reload()}
+          >
+            Regenerate
+          </button>
+          <button
+            disabled={!token}
+            className="px-4 py-2 bg-gray-700 rounded-md disabled:opacity-50"
+            onClick={() => setDisplayDebug((p) => !p)}
+          >
+            Debug
+          </button>
+          <input
+            type="password"
+            className="px-4 py-2 bg-gray-700 rounded-md"
+            value={token}
+            placeholder="OpenAI API key"
+            onChange={(e) => setToken(e.target.value)}
+          />
         </div>
       </div>
-
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
+      <div
+        className={`bg-[rgba(20,20,20,0.8)] backdrop-blur-xl p-8 rounded-sm absolute left-0 top-0 bottom-0 transition-all w-[75vw] sm:w-[33vw] ${
+          displayDebug ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div
+          className="absolute z-10 top-4 right-4 opacity-50 cursor-pointer"
+          onClick={() => setDisplayDebug(false)}
+        >
+          ⛌
+        </div>
+        <div className="space-y-8">
+          <div className="space-y-2">
+            <div className="font-semibold opacity-50">Phase:</div>
+            <p>{phase}</p>
+          </div>
+          <div className="space-y-2">
+            <div className="font-semibold opacity-50">Transcript:</div>
+            <p>{transcription || "--"}</p>
+          </div>
+          <div className="space-y-2">
+            <div className="font-semibold opacity-50">Captures:</div>
+            <img
+              className="object-contain w-full border border-gray-500"
+              alt="Grid"
+              src={imagesGridUrl || transparentPixel}
+            />
+          </div>
+        </div>
       </div>
-
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800 hover:dark:bg-opacity-30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
-  )
+    </>
+  );
 }
