@@ -15,7 +15,7 @@ This project is a fun experiment to explore the feasibility of real-time AI inte
 
 ## 🚀 Getting Started
 
-You can provide the OPENAI_API_KEY environment variable or let the user provide its own API key in the UI.
+You can provide the `OPENAI_API_KEY`` environment variable or let the user provide its own API key in the UI.
 
 First, run the development server:
 
@@ -27,4 +27,18 @@ yarn dev
 pnpm dev
 # or
 bun dev
+```
+
+## 🔧 Constants
+
+Some constants are fixed at the top of `/src/app/page.js`. You may want to tweak these :
+
+```js
+const INTERVAL = 250;
+const IMAGE_WIDTH = 512;
+const IMAGE_QUALITY = 0.6;
+const COLUMNS = 4;
+const MAX_SCREENSHOTS = 60;
+const SILENCE_DURATION = 2500;
+const SILENT_THRESHOLD = -30;
 ```
