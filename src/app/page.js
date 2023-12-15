@@ -7,6 +7,11 @@ import useMediaRecorder from "@wmik/use-media-recorder";
 import mergeImages from "merge-images";
 import { useLocalStorage } from "../lib/use-local-storage";
 
+export const metadata = {
+  title: "GPT Video demo",
+  description: "An experiment to reproduce the gemini staged video for real.",
+};
+
 const INTERVAL = 250;
 const IMAGE_WIDTH = 512;
 const IMAGE_QUALITY = 0.6;
