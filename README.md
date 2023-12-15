@@ -1,4 +1,4 @@
-# GPT Video - Reproducing theA Gemini demo using GPT 4 Vision
+# GPT Video - Reproducing the Gemini demo using GPT 4 Vision
 
 ![Screenshot of the App](/screenshot.jpg)
 
