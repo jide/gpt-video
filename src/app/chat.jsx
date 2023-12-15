@@ -292,7 +292,7 @@ export default function Chat() {
     return () => {
       clearInterval(intervalId);
     };
-  }, [interval, video.status, audio.isRecording]);
+  }, [video.status, audio.isRecording]);
 
   useEffect(() => {
     if (!audio.isRecording) {
