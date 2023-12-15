@@ -1,4 +1,4 @@
-import Chat from "./components/Chat";
+import Chat from "./chat";
 
 export const metadata = {
   title: "GPT Video demo",
