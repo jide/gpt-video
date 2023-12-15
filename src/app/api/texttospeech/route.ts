@@ -7,7 +7,7 @@ export async function POST(req: Request) {
   const input = formData.get("input") as string;
   const token = formData.get("token") as string;
 
-  if (!token && !process.env.OPENAI_API_KEY) {
+  if ((!token || token === "null") && !process.env.OPENAI_API_KEY) {
     return Response.json({
       error: "No API key provided.",
     });

@@ -23,7 +23,7 @@ export async function POST(req) {
   const json = await req.json();
   const { messages, token, lang } = json;
 
-  if (!token && !process.env.OPENAI_API_KEY) {
+  if ((!token || token === "null") && !process.env.OPENAI_API_KEY) {
     return Response.json({
       error: "No API key provided.",
     });
