@@ -21,9 +21,15 @@ ${lang ? `10. Assistant must speak in this language : "${lang}".` : ""}`;
 
 export async function POST(req) {
   const json = await req.json();
-  const { messages, token, lang } = json;
+  const { messages, lang } = json;
 
-  if ((!token || token === "null") && !process.env.OPENAI_API_KEY) {
+  let token = json.token;
+
+  if (token === "null") {
+    token = null;
+  }
+
+  if (!token && !process.env.OPENAI_API_KEY) {
     return Response.json({
       error: "No API key provided.",
     });
