@@ -7,6 +7,14 @@
 After seeing the 'gemini' video, I asked myself: Could the 'gemini' experience showcased by Google be more than just a scripted demo?
 This project is a fun experiment to explore the feasibility of real-time AI interactions similar to those portrayed in 'gemini'.
 
+[See detailed explanation in this article](https://medium.com/p/fc559c38bd24)
+
+## ✨ Demo
+
+https://gpt-video-jidefr.vercel.app
+
+You'll need an OpenAI API key. Remember to delete the API key after using it sor safety.
+
 ## 🛠 Stack
 
 - Next.js with App Router.
